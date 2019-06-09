@@ -3,6 +3,7 @@ A class in PHP that retrieves Query information from almost any MinecraftPE serv
 
 # Example
 
+``` php
 <?php
 
 //Server IP address
@@ -21,3 +22,4 @@ $query = new \mcpe\Query($ip, $port, $timeout);
 $info = $query->getInfo();
 
 ?>
+```
