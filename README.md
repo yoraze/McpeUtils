@@ -1,7 +1,7 @@
-# McpeQuery
-A class in PHP that retrieves Query information from almost any MinecraftPE server. What else is there to tell?
+# McpeUtils
 
-# Example
+
+## Query example
 
 ``` php
 <?php
@@ -22,4 +22,16 @@ $query = new \mcpe\Query($ip, $port, $timeout);
 $info = $query->getInfo();
 
 ?>
+```
+
+## Rcon example
+``` php
+<?php
+$rcon = new MCRcon("127.0.0.1", 19132);
+
+$rcon->connect();
+$rcon->authorize("mytoppassword");
+
+echo $rcon->sendCommand("help");
+
 ```
