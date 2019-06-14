@@ -6,6 +6,8 @@
 ``` php
 <?php
 
+include "src/mcpe/Query.php";
+
 //Server IP address
 $ip = "0.0.0.0";
 //Server port
@@ -27,7 +29,10 @@ $info = $query->getInfo();
 ## Rcon example
 ``` php
 <?php
-$rcon = new MCRcon("127.0.0.1", 19132);
+
+include "src/mcpe/Rcon.php";
+
+$rcon = new \mcpe\Rcon("127.0.0.1", 19132);
 
 $rcon->connect();
 $rcon->authorize("mytoppassword");
