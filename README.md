@@ -1,5 +1,6 @@
 # McpeUtils
 
+Utils for the game Minecraft PE, written in PHP 7.2.
 
 ## Query example
 
@@ -16,12 +17,26 @@ $port = 19132;
 //Timeout
 $timeout = 5;
 
-
+use mcpe\Query;
+use stdClass;
 
 $query = new \mcpe\Query($ip, $port, $timeout);
 
-//Query info(array)
-$info = $query->getInfo();
+// Connect
+$query->connect();
+
+// Query info(stdClass)
+$queryInfo = $query->getQueryInfo();
+
+// Ping info(stdClass)
+$pingInfo = $query->getPingInfo();
+
+// Ping and query info(stdClass)
+$fullInfo = $query->getInfo();
+
+
+// Dump full info
+var_dump($fullInfo);
 
 ?>
 ```
