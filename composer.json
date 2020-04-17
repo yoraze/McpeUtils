@@ -1,6 +1,6 @@
 {
     "name": "yoraze/mcpeutils",
-    "description": "A library of classes, writen in PHP, that retrieves Query information from almost any Minecraft:PE/BE server",
+    "description": "A library of classes, written in PHP, that retrieves Query information from almost any Minecraft:PE/BE server",
     "type": "library",
     "require": {
         "php": ">=7.2.0",
