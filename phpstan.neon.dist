@@ -5,6 +5,3 @@ parameters:
 	level: 8
 	paths:
 		- src
-#	reportUnmatchedIgnoredErrors: false #no other way to silence platform-specific non-warnings
-	parallel:
-		maximumNumberOfProcesses: 1
