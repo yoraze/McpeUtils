@@ -1,0 +1,5 @@
+# Composer
+vendor/*
+
+# Phar files (Composer/PHPStan)
+*.phar

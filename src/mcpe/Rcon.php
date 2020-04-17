@@ -1,113 +1,152 @@
 <?php
 
+declare(strict_types=1);
+
 namespace mcpe;
 
-class Rcon {
-    protected $info = [],
-    $socket,
-    $authorized = false,
-    $connected = false,
-    $lastResponse = '';
+use function fread;
+use function fsockopen;
+use function fwrite;
+use function pack;
+use function stream_set_timeout;
+use function strlen;
+use function unpack;
 
-    public $errno = false,
-    $errstr = "";
+class Rcon{
+    public const PACKET_COMMAND        = 2;
+    public const PACKET_LOGIN          = 3;
+    public const PACKET_LOGGER         = 4;
+    public const PACKET_PROTOCOL_CHECK = 9;
 
-    const PACKET_AUTHORIZE = 5;
-    const PACKET_COMMAND = 6;
-    const PACKET_STATUS = 8;
-    const SERVERDATA_AUTH = 3;
-    const SERVERDATA_UNCONNECT = 5;
-    const SERVERDATA_STATUS = 6;
-    const SERVERDATA_AHUTDOWN = 7;
-    const SERVERDATA_AUTH_RESPONSE = 2;
-    const SERVERDATA_EXECCOMMAND = 2;
-    const SERVERDATA_RESPONSE_VALUE = 0;
-    public function __construct($host, $port, $timeout = 10){
-        $this->info["host"] = $host;
-        $this->info["port"] = $port;
-        $this->info["timeout"] = $timeout;
+    public const RESPONSE_COMMAND = 0;
+    public const RESPONSE_LOGIN   = 2;
+
+    /** @var string */
+    protected $host;
+    /** @var int */
+    protected $port;
+    /** @var int */
+    protected $timeout;
+
+    /** @var resource */
+    protected $socket;
+
+    /** @var bool */
+    protected $authorized = false;
+    /** @var bool */
+    protected $connected = false;
+    /** @var string */
+    protected $lastResponse = '';
+    /** @var int */
+    protected $currentRequestId = 0;
+
+    /** @var bool */
+    public $errno = false;
+    /** @var string */
+    protected $errstr = "";
+
+    public function __construct(string $host, int $port, int $timeout = 10){
+        $this->host = $host;
+        $this->port = $port;
+        $this->timeout = $timeout;
     }
-    public function connect(){
-        $this->socket = @fsockopen($this->info["host"], $this->info["port"], $errno, $errstr, $this->info["timeout"]);
-        if(!$this->socket || $errno){
+
+    public function connect() : void{
+        $socket = @fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
+        if($socket === false || $errno){
+            $this->connected = false;
+
             $this->errno = $errno;
             $this->errstr = $errstr;
+
             return;
         }
+
+        $this->socket = $socket;
+
         stream_set_timeout($this->socket, 3, 0);
         $this->connected = true;
     }
-    public function isConnected(){
+
+    public function isConnected() : bool{
         return $this->connected;
     }
-    public function disconnect(){
-        if($this->socket){
-            fclose($this->socket);
-        }
+
+    private function disconnect() : void{
+        fclose($this->socket);
     }
-    public function sendCommand($command){
+
+    public function authorize(string $password) : bool{
         if(!$this->isConnected()){
             return false;
         }
-        $this->writePacket(self::PACKET_COMMAND, self::SERVERDATA_EXECCOMMAND, $command);
+
+        $this->writePacket(++$this->currentRequestId, self::PACKET_LOGIN, $password);
         $response_packet = $this->readPacket();
-        if($response_packet['id'] == self::PACKET_COMMAND){
-            if($response_packet['type'] == self::SERVERDATA_RESPONSE_VALUE){
-                $this->lastResponse = $response_packet['body'];
-                return $response_packet['body'];
-            }
+        if(
+            $response_packet !== null and
+            $response_packet['requestid'] === $this->currentRequestId and
+            $response_packet['response'] === self::RESPONSE_LOGIN //TODO: This is check is useless, because server sends this as 2 every time
+        ){
+            $this->authorized = true;
+            return true;
         }
-        return false;
-    }
-    public function getStatus(){
-        if(!$this->isConnected()){
-            return false;
-        }
-        $this->writePacket(self::PACKET_STATUS, self::SERVERDATA_STATUS, $command);
-        $response_packet = $this->readPacket();
-        if($response_packet['id'] == self::PACKET_STATUS){
-            if($response_packet['type'] == self::SERVERDATA_RESPONSE_VALUE){
-                $this->lastResponse = $response_packet['body'];
-                return unserialize($response_packet['body']);
-            }
-        }
-        return [];
-    }
-    public function authorize(string $password){
-        if(!$this->isConnected()){
-            return false;
-        }
-        $this->writePacket(self::PACKET_AUTHORIZE, self::SERVERDATA_AUTH, $password);
-        $response_packet = $this->readPacket();
-        if($response_packet['type'] == self::SERVERDATA_AUTH_RESPONSE){
-            if($response_packet['id'] == self::PACKET_AUTHORIZE){
-                $this->authorized = true;
-                return true;
-            }
-        }
+
+        // Server sends requestid-field as -1 if login failed
+
         $this->disconnect();
         return false;
     }
-    private function writePacket($packetId, $packetType, $packetBody){
+
+    public function sendCommand(string $command) : ?string{
         if(!$this->isConnected()){
-            return false;
+            return null;
         }
-        $packet = pack('VV', $packetId, $packetType);
-        $packet = $packet.$packetBody."\x00";
-        $packet = $packet."\x00";
-        $packet_size = strlen($packet);
-        $packet = pack('V', $packet_size).$packet;
+
+        $this->writePacket(++$this->currentRequestId, self::PACKET_COMMAND, $command);
+        $response_packet = $this->readPacket();
+        if(
+            $response_packet !== null and
+            $response_packet['requestid'] === $this->currentRequestId and
+            $response_packet['response'] === self::RESPONSE_COMMAND
+        ){
+            return $this->lastResponse = $response_packet['payload'];
+        }
+
+        return null;
+    }
+
+    private function writePacket(int $requestID, int $packetType, string $packetBody) : void{
+        if(!$this->isConnected()){
+            return;
+        }
+
+        $packet = pack('VV', $requestID, $packetType) . $packetBody . "\x00\x00";
+        $packet = pack('V', strlen($packet)) . $packet;
         fwrite($this->socket, $packet, strlen($packet));
     }
-    private function readPacket(){
+
+    /**
+     * @return int|string[]
+     * @phpstan-return array{requestid: int, response: int, payload: string}
+     */
+    private function readPacket() : ?array{
         if(!$this->isConnected()){
-            return false;
+            return null;
         }
-        $size_data = fread($this->socket, 4);
-        $size_pack = unpack('V1size', $size_data);
-        $size = $size_pack['size'];
-        $packet_data = fread($this->socket, $size);
-        $packet_pack = unpack('V1id/V1type/a*body', $packet_data);
-        return $packet_pack;
+
+        $size_packed = fread($this->socket, 4);
+        if($size_packed === false){
+            return null;
+        }
+
+        $size = unpack("V", $size_packed)[1];
+
+        $packet_serialized = fread($this->socket, $size);
+        if($packet_serialized === false){
+            return null;
+        }
+
+        return unpack('V1requestid/V1response/a*payload', $packet_serialized);
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace mcpe;
 
 class Query{
@@ -21,10 +23,12 @@ class Query{
 
     public function connect() : void{
         $this->resolveSRV();
-        $this->socket = stream_socket_client("udp://" . $this->ip . ":" . $this->port, $errno, $errstr, $this->timeout);
-        if($errno || $this->socket === false){
+        $socket = stream_socket_client("udp://" . $this->ip . ":" . $this->port, $errno, $errstr, $this->timeout);
+        if($errno || $socket === false){
             throw new \RuntimeException("Socket connection error");
         }
+
+        $this->socket = $socket;
 
         stream_set_timeout($this->socket, $this->timeout);
         stream_set_blocking($this->socket, true);
@@ -46,7 +50,7 @@ class Query{
     public function getQueryInfo() : ?\stdClass{
         $packet = $this->writePacket(9);
 
-        if($packet === false){
+        if($packet === null){
             throw new \RuntimeException("Challenge packet error");
         }
 
@@ -54,7 +58,7 @@ class Query{
 
         $query = new \stdClass;
 
-        if($packet == false){
+        if($packet === null){
             $query->error = "Statistic packet error";
             return $query;
         }
@@ -67,7 +71,7 @@ class Query{
             return $query;
         }
 
-        $status["players"] = explode("\x00", substr($data[1], 0, -2));
+        $query->players = explode("\x00", substr($data[1], 0, -2));
         $data = explode("\x00", $data[0]);
         $last = false;
         foreach($data as $val){
@@ -103,7 +107,7 @@ class Query{
         fwrite($this->socket, $pingPacket);
         $packet = fread($this->socket, 65535);
 
-        if(!$packet){
+        if($packet === false){
             return null;
         }
 
@@ -152,7 +156,7 @@ class Query{
         }
 
         $record = dns_get_record("_minecraft._tcp.$address", DNS_SRV);
-        if(empty($record)){
+        if($record === false || count($record) === 0){
             return;
         }
 
@@ -161,24 +165,20 @@ class Query{
         }
     }
 
-    public function writePacket(string $command, string $append = "") : ?array{
+    /**
+     * @return int|string[]
+     * @phpstan-return array{packetType: int, sessionID: int, payload: string}
+     */
+    protected function writePacket(int $command, string $append = "") : ?array{
         $command = "\xFE\xFD" . chr($command) . pack("c*", 0x01, 0x02, 0x03, 0x04) . $append;
 
         fwrite($this->socket, $command);
 
-        $data = fread($this->socket, 65535);
-        if(!$data){
+        $buffer = fread($this->socket, 65535);
+        if($buffer === false || strlen($buffer) < 5 || $buffer[0] !== $command[2]){
             return null;
         }
 
-        if(strlen($data) < 5 || $data[0] !== $command[2]){
-            return null;
-        }
-
-        return $this->readPacket($data);
-    }
-
-    public function readPacket(string $buffer) : array{
         $redata = [];
         $redata["packetType"] = ord($buffer[0]);
         $redata["sessionID"] = unpack("N", substr($buffer, 1, 4))[1];
