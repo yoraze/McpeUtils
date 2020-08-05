@@ -4,6 +4,25 @@ declare(strict_types=1);
 
 namespace mcpe;
 
+use function chr;
+use function count;
+use function dns_get_record;
+use function explode;
+use function fclose;
+use function fread;
+use function fwrite;
+use function ip2long;
+use function ord;
+use function pack;
+use function preg_replace;
+use function stream_set_blocking;
+use function stream_set_timeout;
+use function stream_socket_client;
+use function strlen;
+use function substr;
+use function unpack;
+use const DNS_SRV;
+
 class Query{
     /** @var string */
     protected $ip;
@@ -101,13 +120,14 @@ class Query{
     }
 
     public function getPingInfo() : ?\stdClass{
-        $pingPacket = "\x01" . "\x00\x00\x00\x00\x00\x00\x00\x00" . "\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78";
-        //packetId + long(0) + magic
+        $pingPacket = "\x01" . "\x00\x00\x00\x00\x00\x00\x00\x00" . "\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78" . "\x00\x00\x00\x00\x00\x00\x00\x00";
+        //byte + long(0) + magic + long(0)
+        //packetId + sendPingTime + magic + clientId
 
         fwrite($this->socket, $pingPacket);
         $packet = fread($this->socket, 65535);
 
-        if($packet === false){
+        if($packet === false || $packet === ''){
             return null;
         }
 
