@@ -15,21 +15,30 @@ use function ip2long;
 use function ord;
 use function pack;
 use function preg_replace;
+use function random_int;
 use function stream_set_blocking;
 use function stream_set_timeout;
 use function stream_socket_client;
 use function strlen;
 use function substr;
 use function unpack;
+use const false;
 use const DNS_SRV;
+use const null;
+use const true;
 
 class Query{
+    protected const RAKNET_MAGIC = "\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78";
+
     /** @var string */
     protected $ip;
     /** @var int */
     protected $port;
     /** @var int */
     protected $timeout;
+
+    /** @var string */
+    protected $clientId;
 
     /** @var resource */
     protected $socket = null;
@@ -38,10 +47,12 @@ class Query{
         $this->ip = $ip;
         $this->port = $port;
         $this->timeout = $timeout;
+
+        $this->resolveSRV();
+        $this->newClientId();
     }
 
     public function connect() : void{
-        $this->resolveSRV();
         $socket = stream_socket_client("udp://" . $this->ip . ":" . $this->port, $errno, $errstr, $this->timeout);
         if($errno || $socket === false){
             throw new \RuntimeException("Socket connection error");
@@ -55,6 +66,14 @@ class Query{
 
     public function close() : void{
         fclose($this->socket);
+    }
+
+    /**
+     * Regenerates client id.
+     * Some servers can catch bots by zero-filled clientId and dont give back any server info.
+     */
+    public function newClientId() : void{
+        $this->clientId = pack('ll', random_int(-0x7fffffff, 0x7fffffff), random_int(-0x7fffffff, 0x7fffffff));
     }
 
     public function getInfo() : \stdClass{
@@ -82,7 +101,7 @@ class Query{
             return $query;
         }
 
-        $data = substr($packet["payload"], 11); // splitnum + 2 int
+        $data = substr($packet["payload"], 11); // "splitnum" + "\x00" + "\x80" + "\x00"
         $data = explode("\x00\x00\x01player_\x00\x00", $data);
 
         if(count($data) !== 2){
@@ -102,7 +121,7 @@ class Query{
             }
         }
 
-        // Parse "plugins", if any
+        // Parse "plugins"
         if($query->plugins !== ""){
             $plugins = explode(": ", $query->plugins, 2);
 
@@ -120,8 +139,8 @@ class Query{
     }
 
     public function getPingInfo() : ?\stdClass{
-        $pingPacket = "\x01" . "\x00\x00\x00\x00\x00\x00\x00\x00" . "\x00\xff\xff\x00\xfe\xfe\xfe\xfe\xfd\xfd\xfd\xfd\x12\x34\x56\x78" . "\x00\x00\x00\x00\x00\x00\x00\x00";
-        //byte + long(0) + magic + long(0)
+        $pingPacket = "\x01" . "\x00\x00\x00\x00\x00\x00\x00\x00" . self::RAKNET_MAGIC . $this->clientId;
+        //byte     + long         + magic + long
         //packetId + sendPingTime + magic + clientId
 
         fwrite($this->socket, $pingPacket);
@@ -168,14 +187,14 @@ class Query{
         return $result;
     }
 
-    public function resolveSRV() : void{
+    protected function resolveSRV() : void{
         $address = &$this->ip;
 
         if(ip2long($address) !== false){
             return;
         }
 
-        $record = dns_get_record("_minecraft._tcp.$address", DNS_SRV);
+        $record = @dns_get_record("_minecraft._tcp.$address", DNS_SRV);
         if($record === false || count($record) === 0){
             return;
         }
