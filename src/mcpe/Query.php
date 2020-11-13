@@ -53,7 +53,7 @@ class Query{
     }
 
     public function connect() : void{
-        $socket = stream_socket_client("udp://" . $this->ip . ":" . $this->port, $errno, $errstr, $this->timeout);
+        $socket = @stream_socket_client("udp://" . $this->ip . ":" . $this->port, $errno, $errstr, $this->timeout);
         if($errno || $socket === false){
             throw new \RuntimeException("Socket connection error");
         }
@@ -85,16 +85,17 @@ class Query{
         return $data;
     }
 
-    public function getQueryInfo() : ?\stdClass{
+    public function getQueryInfo() : \stdClass{
+        $query = new \stdClass;
+
         $packet = $this->writePacket(9);
 
         if($packet === null){
-            throw new \RuntimeException("Challenge packet error");
+            $query->error = "Challenge packet error";
+            return $query;
         }
 
         $packet = $this->writePacket(0, pack("N", $packet["payload"]) . pack("c*", 0x00, 0x00, 0x00, 0x00));
-
-        $query = new \stdClass;
 
         if($packet === null){
             $query->error = "Statistic packet error";
@@ -109,7 +110,12 @@ class Query{
             return $query;
         }
 
-        $query->players = explode("\x00", substr($data[1], 0, -2));
+        if($data[1] === "\x00"){
+            $query->players = [];
+        }else{
+            $query->players = explode("\x00", substr($data[1], 0, -2));
+        }
+
         $data = explode("\x00", $data[0]);
         $last = false;
         foreach($data as $val){
